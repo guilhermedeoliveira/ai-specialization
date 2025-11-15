@@ -1,8 +1,7 @@
-import nltk
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
-nltk.download("punkt_tab")
+from qdrant_client import QdrantClient
+from qdrant_client.http.models import Distance, PointStruct, VectorParams
+from sentence_transformers import SentenceTransformer
+from groq import Groq
 
 documents = [
     "Machine learning é um campo da inteligência artificial que permite que computadores aprendam padrões a partir de dados.",
@@ -18,15 +17,7 @@ documents = [
     "Mais do que encontrar padrões, o machine learning ajuda a tomar decisões baseadas em evidências.",
 ]
 
-def preprocessor(text):
-  text_lower = text.lower()
-  tokens = nltk.word_tokenize(text_lower)
-  
-  return [word for word in tokens if word.isalnum()]
-  
-preprocessed_docs = [" ".join(preprocessor(doc)) for doc in documents]
+model = SentenceTransformer("all-MiniLM-L6-v2")
+client = Groq()
 
-vectorizer = TfidfVectorizer()
-tfidf_matrix = vectorizer.fit_transform(preprocessed_docs)
-
-print(tfidf_matrix)
+qdrant = QdrantClient(":memory:")
