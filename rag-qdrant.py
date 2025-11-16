@@ -2,6 +2,9 @@ from qdrant_client import QdrantClient
 from qdrant_client.http.models import Distance, PointStruct, VectorParams
 from sentence_transformers import SentenceTransformer
 from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
 
 documents = [
     "Machine learning é um campo da inteligência artificial que permite que computadores aprendam padrões a partir de dados.",
@@ -19,5 +22,66 @@ documents = [
 
 model = SentenceTransformer("all-MiniLM-L6-v2")
 client = Groq()
+# qdrant = QdrantClient(":memory:")
+qdrant = QdrantClient(path="db/data")
 
-qdrant = QdrantClient(":memory:")
+collection_name = "ml_documents"
+
+vector_size = model.get_sentence_embedding_dimension()
+
+qdrant.create_collection(
+  collection_name=collection_name,
+  vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE)
+)
+
+points = []
+for idx, doc in enumerate(documents):
+  embedding = model.encode(doc).tolist()
+  points.append(PointStruct(id=idx, vector=embedding, payload={"text": doc}))
+  
+qdrant.upsert(collection_name=collection_name, points=points, wait=True)
+
+def retrieve(query, top_k=3):
+  query_embedding = model.encode(query).tolist()
+  search_result = qdrant.query_points(
+    collection_name=collection_name,
+    query=query_embedding,
+    limit=top_k,
+    with_payload=True,
+  )
+  
+  return [(hit.payload["text"], hit.score) for hit in search_result.points]
+
+def generate_answer(query, retrieve_docs):
+  context = "\n".join([doc for doc, _ in retrieve_docs])
+  
+  response = client.chat.completions.create(
+    model="llama-3.1-8b-instant",
+    messages=[
+      {
+        "role": "system",
+        "content": "Voce é um especialista em machine learning. Use apenas o contexto fornecido para responder as perguntas.",
+      },
+      {
+        "role": "user",
+        "content": f"Contexto:\n{context}\n\nPergunta: {query}"
+      }
+    ],
+    temperature=0
+  )
+  
+  return response.choices[0].message.content
+
+def rag(query, top_k=3):
+  retrieved = retrieve(query, top_k)
+  answer = generate_answer(query, retrieved)
+  
+  return answer, retrieved
+
+answer, docs = rag("O que é machine learning?")
+
+print(answer)
+print(docs)
+
+for doc, similarity in docs:
+  print(f" - {similarity:.3f}: {doc}")
